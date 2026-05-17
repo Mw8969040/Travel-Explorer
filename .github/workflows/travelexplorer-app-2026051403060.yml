@@ -3,6 +3,7 @@ on:
   push:
     branches:
     - master
+    - my-custom-features
 permissions:
   id-token: write
   contents: read
@@ -11,8 +12,8 @@ env:
   CONTAINER_APP_NAME: travelexplorer-app-2026051403060
   CONTAINER_APP_RESOURCE_GROUP_NAME: CarPrice_RG
   CONTAINER_REGISTRY_LOGIN_SERVER: travelexplorer20260514030654.azurecr.io
-  DOCKER_FILE_PATH: Travel Explorer/Dockerfile
-  PROJECT_NAME_FOR_DOCKER: travel explorer
+  DOCKER_FILE_PATH: Dockerfile
+  PROJECT_NAME_FOR_DOCKER: travelexplorer
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,6 +31,7 @@ jobs:
     - name: Build and push container image to registry
       uses: docker/build-push-action@v6
       with:
+        context: .
         push: true
         tags: ${{ env.CONTAINER_REGISTRY_LOGIN_SERVER }}/${{ env.PROJECT_NAME_FOR_DOCKER }}:${{ github.sha }}
         file: ${{ env.DOCKER_FILE_PATH }}
@@ -46,11 +48,9 @@ jobs:
     - name: Deploy to containerapp
       uses: azure/CLI@v2
       with:
-        inlineScript: >
+        inlineScript: |
           az config set extension.use_dynamic_install=yes_without_prompt
-
           az containerapp registry set --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.CONTAINER_APP_RESOURCE_GROUP_NAME }} --server ${{ env.CONTAINER_REGISTRY_LOGIN_SERVER }} --username ${{ secrets.TravelExplorer20260514030654_USERNAME_20C7 }} --password ${{ secrets.TravelExplorer20260514030654_PASSWORD_20C7 }}
-
           az containerapp update --name ${{ env.CONTAINER_APP_NAME }} --container-name ${{ env.CONTAINER_APP_CONTAINER_NAME }} --resource-group ${{ env.CONTAINER_APP_RESOURCE_GROUP_NAME }} --image ${{ env.CONTAINER_REGISTRY_LOGIN_SERVER }}/${{ env.PROJECT_NAME_FOR_DOCKER }}:${{ github.sha }}
     - name: logout
       run: >
