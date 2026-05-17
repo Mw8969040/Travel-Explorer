@@ -11,11 +11,11 @@ namespace Travel_Explorer.Infrastructure.DependencyInjection
         {
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseNpgsql(
-                    configuration.GetConnectionString("DefaultConnection"), 
-                    npgsqlOptions => {
+                    configuration.GetConnectionString("DefaultConnection")
+                    //npgsqlOptions => {
                         
-                        npgsqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
-                    }
+                    //    npgsqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
+                    //}
                 )
             );
 

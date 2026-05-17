@@ -48,11 +48,15 @@ namespace Travel_Explorer
 
             // Configure the HTTP request pipeline.
 
-            if (app.Environment.IsDevelopment())
-            {
+            //if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
+            //{
                 app.UseSwagger();
-                app.UseSwaggerUI();
-            }
+            app.UseSwaggerUI(c =>
+            {
+                c.SwaggerEndpoint("/swagger/v1/swagger.json", "Travel Explorer API V1");
+                c.RoutePrefix = string.Empty; // عشان يفتح الـ Swagger أول ما تدخل على رابط الموقع مباشرة
+            });
+            //}
 
             app.UseHttpsRedirection();
 
