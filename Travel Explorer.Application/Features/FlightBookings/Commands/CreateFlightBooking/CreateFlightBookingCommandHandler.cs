@@ -5,11 +5,12 @@ using Travel_Explorer.Domain.Enums;
 
 namespace Travel_Explorer.Application.Features.FlightBookings.Commands.CreateFlightBooking
 {
-    public class CreateFlightBookingCommandHandler(IUnitOfWork unitOfWork, IMapper mapper, ICurrentUserService currentUserService) : IRequestHandler<CreateFlightBookingCommand, FlightBookingDto>
+    public class CreateFlightBookingCommandHandler(IUnitOfWork unitOfWork, IMapper mapper, ICurrentUserService currentUserService ,IFlightSchedualRepository flightBookingRepository) : IRequestHandler<CreateFlightBookingCommand, FlightBookingDto>
     {
         private readonly IUnitOfWork _unitOfWork = unitOfWork;
         private readonly IMapper _mapper = mapper;
         private readonly ICurrentUserService _currentUserService = currentUserService;
+        private readonly IFlightSchedualRepository _flightBookingRepository = flightBookingRepository;
 
         public async Task<FlightBookingDto> Handle(CreateFlightBookingCommand request, CancellationToken cancellationToken)
         {
@@ -22,6 +23,7 @@ namespace Travel_Explorer.Application.Features.FlightBookings.Commands.CreateFli
                     if (flightSchedule.AvailableEconomySeats < request.NumberOfPassengers)
                         throw new BadRequestException("Not enough Economy seats available on this flight.");
                     ticketPrice = flightSchedule.EconomyPrice;
+                    _flightBookingRepository.Version(flightSchedule, request.Version);
                     flightSchedule.AvailableEconomySeats -= request.NumberOfPassengers;
                     break;
 
@@ -29,6 +31,7 @@ namespace Travel_Explorer.Application.Features.FlightBookings.Commands.CreateFli
                     if (flightSchedule.AvailableBusinessSeats < request.NumberOfPassengers)
                         throw new BadRequestException("Not enough Business seats available on this flight.");
                     ticketPrice = flightSchedule.BusinessPrice;
+                    _flightBookingRepository.Version(flightSchedule, request.Version);
                     flightSchedule.AvailableBusinessSeats -= request.NumberOfPassengers;
                     break;
 
@@ -36,6 +39,7 @@ namespace Travel_Explorer.Application.Features.FlightBookings.Commands.CreateFli
                     if (flightSchedule.AvailableFirstClassSeats < request.NumberOfPassengers)
                         throw new BadRequestException("Not enough First Class seats available on this flight.");
                     ticketPrice = flightSchedule.FirstClassPrice;
+                _flightBookingRepository.Version(flightSchedule, request.Version);
                     flightSchedule.AvailableFirstClassSeats -= request.NumberOfPassengers;
                     break;
 
@@ -43,20 +47,22 @@ namespace Travel_Explorer.Application.Features.FlightBookings.Commands.CreateFli
                     throw new BadRequestException("Invalid flight class.");
             }
 
-            decimal totalPrice = ticketPrice * request.NumberOfPassengers;
-
-            var booking = _mapper.Map<FlightBooking>(request);
-            booking.UserId = _currentUserService.UserId ??0;
-            booking.TotalPrice = totalPrice;
-            booking.Status = BookingStatus.Pending;
-            booking.CreatedAt = DateTime.UtcNow;
-
-            _unitOfWork.Repository<FlightSchedule>().Update(flightSchedule);
-            await _unitOfWork.Repository<FlightBooking>().AddAsync(booking);
-
+             var booking = _mapper.Map<FlightBooking>(request);
             try
             {
-                await _unitOfWork.SaveChangesAsync();
+
+               decimal totalPrice = ticketPrice * request.NumberOfPassengers;
+
+
+               booking.UserId = _currentUserService.UserId ??0;
+               booking.TotalPrice = totalPrice;
+               booking.Status = BookingStatus.Pending;
+               booking.CreatedAt = DateTime.UtcNow;
+              _unitOfWork.Repository<FlightSchedule>().Update(flightSchedule);
+              
+              await _unitOfWork.Repository<FlightBooking>().AddAsync(booking);
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
             catch (DbUpdateConcurrencyException)
             {

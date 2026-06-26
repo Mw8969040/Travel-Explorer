@@ -118,7 +118,7 @@ namespace Travel_Explorer.Infrastructure.Repositories
                 new Claim (ClaimTypes.Role, user.Role)
             };
             
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Token));
+            var key = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Token));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512);
 
             var tokenDescriptor = new JwtSecurityToken
@@ -181,11 +181,11 @@ namespace Travel_Explorer.Infrastructure.Repositories
 
         private async Task<TokenResponseDto> CreateTokenResponse(ApplicationUser user)
         {
-
             return new TokenResponseDto
             {
                 AccessToken = await CreateToken(user),
-                RefreshToken = await GenerateAndSaveRefreshTokenAsync(user)
+                RefreshToken = await GenerateAndSaveRefreshTokenAsync(user),
+                Role = user.Role    
             };
         }
 
@@ -249,6 +249,8 @@ namespace Travel_Explorer.Infrastructure.Repositories
                 return existingUser;
             }
 
+
+
             var newUser = new ApplicationUser
             {
                 UserName = name,
@@ -265,6 +267,7 @@ namespace Travel_Explorer.Infrastructure.Repositories
 
             _context.Users.Add(newUser);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
 
             return newUser;
         }
@@ -296,4 +299,15 @@ namespace Travel_Explorer.Infrastructure.Repositories
        
     }
 }
+
+
+
+
+
+
+
+
+
+
+
 

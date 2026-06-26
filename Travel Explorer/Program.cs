@@ -1,6 +1,9 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
+
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Travel_Explorer.Application.DependencyInjection;
@@ -19,34 +22,6 @@ namespace Travel_Explorer
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Translate Azure dash-separated configuration keys and environment variables to nested keys
-            var translatedConfig = new Dictionary<string, string>();
-            foreach (var item in builder.Configuration.AsEnumerable())
-            {
-                var key = item.Key;
-                var val = item.Value;
-                if (!string.IsNullOrEmpty(val))
-                {
-                    if (key.StartsWith("APPSETTING_", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var cleanKey = key.Substring("APPSETTING_".Length);
-                        if (cleanKey.Contains('-'))
-                        {
-                            translatedConfig[cleanKey.Replace('-', ':')] = val;
-                        }
-                    }
-                    else if (key.Contains('-'))
-                    {
-                        translatedConfig[key.Replace('-', ':')] = val;
-                    }
-                }
-            }
-            if (translatedConfig.Count > 0)
-            {
-                builder.Configuration.AddInMemoryCollection(translatedConfig!);
-            }
-
-
             builder.Services.AddApplicationServices();
             builder.Services.AddInfrastructureServices(builder.Configuration);
             builder.Services.AddHttpContextAccessor();
@@ -57,110 +32,111 @@ namespace Travel_Explorer
                     options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
                 });
 
-
             builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen(options =>
-            {
-                options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Travel Explorer API", Version = "v1" });
 
-
-                options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            builder.Services.AddSwaggerGen(
+                async options =>
                 {
-                    Name = "Authorization",
-                    Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
-                    Scheme = "Bearer",
-                    BearerFormat = "JWT",
-                    In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-                    Description = "JWT Authorization header using the Bearer scheme. Example: \"Bearer {token}\""
-                });
+                    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Travel Explorer API", Version = "v1" });
 
-                options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
-                {
+                    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
                     {
-                        new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                        Name = "Authorization",
+                        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+                        Scheme = "Bearer",
+                        BearerFormat = "JWT",
+                        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+                        Description = "JWT Authorization header using the Bearer scheme. Example: \"Bearer {token}\""
+                    });
+
+                    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+                    {
                         {
-                            Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
                             {
-                                Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                                Id = "Bearer"
-                            }
-                        },
-                        Array.Empty<string>()
-                    }
+                                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                                {
+                                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                                    Id = "Bearer"
+                                }
+                            },
+                            Array.Empty<string>()
+                        }
+                    });
                 });
-            });
 
 
-            // 🌐 تعديل الـ CORS لتسريع جلب البيانات وعمل كاش للـ Preflight Requests
-            builder.Services.AddCors(options =>
-            {
-                options.AddPolicy("AllowAll", policy =>
-                {
-                    policy.WithOrigins("https://travel-explorer-jade.vercel.app") // تحديد دومين الـ Frontend بدقة
-                          .AllowAnyMethod()
-                          .AllowAnyHeader()
-                          .WithExposedHeaders("X-Pagination")
-                          .SetPreflightMaxAge(TimeSpan.FromHours(1)); // كاش لطلب الاستئذان لمدة ساعة كاملة
-                });
-            });
 
-
-            var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>() ?? new JwtSettings();
-
-            if (string.IsNullOrEmpty(jwtSettings.Token))
-            {
-                jwtSettings.Token = "ThisIsAVeryLongAndSuperSecureSecretKeyThatIsAtLeast32BytesLongaslhafkafna;f;230982050345afba!!!!";
-            }
-            if (string.IsNullOrEmpty(jwtSettings.Issuer))
-            {
-                jwtSettings.Issuer = "http://travelexplorer.somee.com";
-            }
-            if (string.IsNullOrEmpty(jwtSettings.Audience))
-            {
-                jwtSettings.Audience = "MyAwesomeAudience";
-            }
-
-            builder.Services.Configure<JwtSettings>(options =>
-            {
-                options.Token = jwtSettings.Token;
-                options.Issuer = jwtSettings.Issuer;
-                options.Audience = jwtSettings.Audience;
-                options.AccessTokenExpirationMinutes = jwtSettings.AccessTokenExpirationMinutes == 0 ? 60 : jwtSettings.AccessTokenExpirationMinutes;
-                options.RefreshTokenExpirationDays = jwtSettings.RefreshTokenExpirationDays == 0 ? 7 : jwtSettings.RefreshTokenExpirationDays;
-                options.GoogleClientId = jwtSettings.GoogleClientId;
-                options.GoogleClientSecret = jwtSettings.GoogleClientSecret;
-                options.GoogleFrontendRedirectURl = jwtSettings.GoogleFrontendRedirectURl;
-                options.GoogleFrontendloginRedirectUrl = jwtSettings.GoogleFrontendloginRedirectUrl;
-            });
-
-            builder.Services.Configure<PaymobtSettings>(builder.Configuration.GetSection("PaymobSettings"));
-
-            var authenticationBuilder = builder.Services.AddAuthentication(
-                options =>
-                {
-                    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-                }).AddCookie("ExternalCookie")
-                .AddJwtBearer(options =>
-                {
-                    options.TokenValidationParameters = new TokenValidationParameters
+                    builder.Services.AddCors(options =>
                     {
-                        ValidateIssuer = true,
-                        ValidateAudience = true,
-                        ValidateLifetime = true,
-                        ValidateIssuerSigningKey = true,
-                        ValidIssuer = jwtSettings.Issuer,
-                        ValidAudience = jwtSettings.Audience,
-                        ClockSkew = TimeSpan.Zero,
-                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Token))
-                    };
-                });
+                        options.AddPolicy("AllowAll", policy =>
+                        {
+                            policy.AllowAnyOrigin()
+                                  .AllowAnyMethod()
+                                  .AllowAnyHeader()
+                                  .WithExposedHeaders("X-Pagination")
+                                  .SetPreflightMaxAge(TimeSpan.FromHours(1));
+                        });
+
+                    });
+        
+        
+
+            // 🔥 حل المشكلة الجذري: إجبار الدوت نت على استخدام كلاس مخصص لبناء خيارات الـ JwtBearer وتخطي الـ OptionsFactory المكسور على Azure
+            //builder.Services.AddSingleton<Microsoft.Extensions.Options.IOptionsFactory<JwtBearerOptions>, CustomJwtBearerOptionsFactory>();
+
+            // ✅ جلب الـ Connection String بكل الصيغ المتاحة لتأمين الاتصال بقاعدة بيانات Neon
+            var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 
+            builder.Services.AddDbContext<ApplicationDbContext>(options =>
+                options.UseNpgsql(connectionString,
+                    npgsqlOptions =>
+                    {
+                        npgsqlOptions.CommandTimeout(10);
+                        npgsqlOptions.EnableRetryOnFailure(
+                            maxRetryCount: 5,
+                            maxRetryDelay: TimeSpan.FromSeconds(10),
+                            errorCodesToAdd: null);
+                    }));
 
 
-            if (!string.IsNullOrWhiteSpace(jwtSettings.GoogleClientId) &&
-                !string.IsNullOrWhiteSpace(jwtSettings.GoogleClientSecret))
+            builder.Services.AddHealthChecks()
+    .AddDbContextCheck<ApplicationDbContext>(
+        name: "database_health_check",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: new[] { "db", "ready" });
+
+            // ✅ قراءة بيانات الـ JWT الأساسية صراحة لمنع أي تعامل عشوائي من السيرفر
+            var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>() ?? new JwtSettings();
+            builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
+
+            // ✅ بناء الـ Authentication بشكل صارم ومباشر بدون إتاحة أي فرصة للانهيار
+            var authenticationBuilder = builder.Services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddCookie("ExternalCookie", options =>
+            {
+                options.Cookie.Name = "ExternalCookie";
+            })
+            .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = jwtSettings.Issuer,
+                    ValidAudience = jwtSettings.Audience,
+                    ClockSkew = TimeSpan.Zero,
+                    IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Token))
+                };
+            });
+
+            if (!string.IsNullOrWhiteSpace(jwtSettings.GoogleClientId) && !string.IsNullOrWhiteSpace(jwtSettings.GoogleClientSecret))
             {
                 authenticationBuilder.AddGoogle(options =>
                 {
@@ -170,64 +146,13 @@ namespace Travel_Explorer
                 });
             }
 
+
             builder.Services.AddAuthorization();
 
             var app = builder.Build();
 
-
-            using (var scope = app.Services.CreateScope())
-            {
-                var services = scope.ServiceProvider;
-                try
-                {
-                    var configuration = services.GetRequiredService<IConfiguration>();
-                    var connString = configuration.GetConnectionString("DefaultConnection");
-                    if (string.IsNullOrWhiteSpace(connString))
-                    {
-                        connString = configuration["POSTGRESQLCONNSTR_DefaultConnection"] ??
-                                     Environment.GetEnvironmentVariable("POSTGRESQLCONNSTR_DefaultConnection");
-                    }
-
-                    if (string.IsNullOrWhiteSpace(connString))
-                    {
-                        Console.WriteLine("Warning: DefaultConnection connection string is missing or empty. Database migrations and seeding skipped.");
-                        Console.WriteLine("Diagnostics (Startup): Scanning available configuration keys that might contain connection settings...");
-                        try
-                        {
-                            foreach (var child in configuration.AsEnumerable())
-                            {
-                                if (child.Key.Contains("Conn", StringComparison.OrdinalIgnoreCase) ||
-                                    child.Key.Contains("Postgres", StringComparison.OrdinalIgnoreCase) ||
-                                    child.Key.Contains("Default", StringComparison.OrdinalIgnoreCase) ||
-                                    child.Key.Contains("Db", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    Console.WriteLine($"Config Key found: '{child.Key}' (Length: {child.Value?.Length ?? 0})");
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Diagnostics (Startup): Failed to scan configuration keys: {ex.Message}");
-                        }
-                    }
-                    else
-                    {
-                        var db = services.GetRequiredService<ApplicationDbContext>();
-                        await db.Database.MigrateAsync();
-
-                        await RoleSeeder.SeedRolesAsync(services.GetRequiredService<RoleManager<IdentityRole<int>>>());
-                        await AdminSeeder.SeedAsync(services);
-                        await DataSeeder.SeedAsync(services);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error during database migration or seeding: {ex.Message}");
-                }
-            }
-
+            // الـ Middleware المخصص لمعالجة الأخطاء في مقدمة الـ Pipeline
             app.UseMiddleware<Middleware.ExceptionMiddleware>();
-
 
             app.UseSwagger();
             app.UseSwaggerUI();
@@ -236,18 +161,41 @@ namespace Travel_Explorer
             {
                 app.UseHttpsRedirection();
             }
+            //using var scope = app.Services.CreateScope();
+            //var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            //await context.Database.MigrateAsync();
 
-            // تفعيل سياسة الـ CORS قبل الـ Authentication والـ Authorization
+
             app.UseCors("AllowAll");
 
             app.UseAuthentication();
             app.UseAuthorization();
 
+            app.MapHealthChecks("/health");
+            //تطبيق الـ Migrations تلقائياً عند التشغيل
+            //using (var scope = app.Services.CreateScope())
+            //{
+            //    var services = scope.ServiceProvider;
+            //    try
+            //    {
+            //        var context = services.GetRequiredService<ApplicationDbContext>();
+            //        if (context.Database.IsRelational())
+            //        {
+            //            await context.Database.MigrateAsync();
+            //        }
+            //    }
+            //    catch (Exception ex)
+            //    {
+            //        var logger = services.GetRequiredService<ILogger<Program>>();
+            //        logger.LogError(ex, "حدث خطأ أثناء تطبيق الـ Migrations على قاعدة البيانات.");
+            //    }
+            //}
+
             app.UsePaymentWebhookVerification();
-
             app.MapControllers();
-
             await app.RunAsync();
+
+
         }
     }
 }
